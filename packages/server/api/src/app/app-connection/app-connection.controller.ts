@@ -179,19 +179,20 @@ export const appConnectionController: FastifyPluginCallbackZod = (app, _opts, do
     })
 
     app.post('/oauth2/external-claim', ExternalClaimRequest, async (request, reply) => {
+        // Use OAUTH2 when custom clientId+secret provided (own app, e.g. Meta)
         // Use CLOUD_OAUTH2 when no custom clientId (AP cloud exchanges with its own secret)
-        // Use PLATFORM_OAUTH2 when custom clientId is provided (provider has its own app)
         const hasCustomClientId = !!request.body.clientId
         const connectionType = hasCustomClientId
-            ? AppConnectionType.PLATFORM_OAUTH2
+            ? AppConnectionType.OAUTH2
             : AppConnectionType.CLOUD_OAUTH2
 
         const value = hasCustomClientId
             ? {
-                type: AppConnectionType.PLATFORM_OAUTH2 as const,
+                type: AppConnectionType.OAUTH2 as const,
                 code: request.body.code,
                 code_challenge: request.body.codeVerifier,
                 client_id: request.body.clientId ?? '',
+                client_secret: request.body.clientSecret ?? '',
                 redirect_url: request.body.redirectUrl,
                 scope: request.body.scope ?? '',
                 props: request.body.props,
@@ -428,6 +429,7 @@ const ExternalClaimRequest = {
             code: z.string(),
             codeVerifier: z.string().optional(),
             clientId: z.string().optional(),
+            clientSecret: z.string().optional(),
             redirectUrl: z.string(),
             scope: z.string().optional(),
             props: z.record(z.string(), z.unknown()).optional(),
