@@ -1,6 +1,7 @@
 import { ApId,
     AppConnectionOwners,
     AppConnectionScope,
+    AppConnectionType,
     AppConnectionWithoutSensitiveData,
     ApplicationEventName,
     GetOAuth2AuthorizationUrlRequestBody,
@@ -145,6 +146,49 @@ export const appConnectionController: FastifyPluginCallbackZod = (app, _opts, do
             projectId: request.projectId,
         })
     })
+
+    app.post('/oauth2/external-authorize', ExternalAuthorizeRequest, async (request) => {
+        return oauth2Util(request.log).buildAuthorizationUrl({
+            platformId: request.principal.platform.id,
+            pieceName: request.body.pieceName,
+            redirectUrl: request.body.redirectUrl,
+            props: request.body.props,
+            projectId: request.projectId,
+            clientId: request.body.clientId,
+        })
+    })
+
+    app.post('/oauth2/external-claim', ExternalClaimRequest, async (request, reply) => {
+        const appConnection = await appConnectionService(request.log).upsert({
+            platformId: request.principal.platform.id,
+            projectIds: [request.projectId],
+            type: AppConnectionType.PLATFORM_OAUTH2,
+            externalId: request.body.externalId,
+            value: {
+                type: AppConnectionType.PLATFORM_OAUTH2,
+                code: request.body.code,
+                code_challenge: request.body.codeVerifier,
+                client_id: request.body.clientId ?? '',
+                redirect_url: request.body.redirectUrl,
+                scope: request.body.scope ?? '',
+                props: request.body.props,
+            },
+            displayName: request.body.displayName,
+            pieceName: request.body.pieceName,
+            ownerId: await securityHelper.getUserIdFromRequest(request),
+            scope: AppConnectionScope.PROJECT,
+        })
+        applicationEvents(request.log).sendUserEvent(request, {
+            action: ApplicationEventName.CONNECTION_UPSERTED,
+            data: {
+                connection: appConnection,
+            },
+        })
+        await reply
+            .status(StatusCodes.CREATED)
+            .send(appConnection)
+    })
+
     done()
 }
 
@@ -293,6 +337,65 @@ const GetOAuth2AuthorizationUrlRequest = {
         body: GetOAuth2AuthorizationUrlRequestBody,
         response: {
             [StatusCodes.OK]: GetOAuth2AuthorizationUrlResponse,
+        },
+    },
+}
+
+const ExternalAuthorizeRequest = {
+    config: {
+        security: securityAccess.project(
+            [PrincipalType.USER, PrincipalType.SERVICE],
+            Permission.WRITE_APP_CONNECTION,
+            {
+                type: ProjectResourceType.BODY,
+            },
+        ),
+    },
+    schema: {
+        tags: ['app-connections'],
+        security: [SERVICE_KEY_SECURITY_OPENAPI],
+        description: 'Get OAuth2 authorization URL for external dashboard integration',
+        body: z.object({
+            pieceName: z.string(),
+            projectId: z.string(),
+            redirectUrl: z.string(),
+            clientId: z.string(),
+            props: z.record(z.string(), z.unknown()).optional(),
+        }),
+        response: {
+            [StatusCodes.OK]: GetOAuth2AuthorizationUrlResponse,
+        },
+    },
+}
+
+const ExternalClaimRequest = {
+    config: {
+        security: securityAccess.project(
+            [PrincipalType.USER, PrincipalType.SERVICE],
+            Permission.WRITE_APP_CONNECTION,
+            {
+                type: ProjectResourceType.BODY,
+            },
+        ),
+    },
+    schema: {
+        tags: ['app-connections'],
+        security: [SERVICE_KEY_SECURITY_OPENAPI],
+        description: 'Exchange OAuth2 code for tokens and create connection for external dashboard',
+        body: z.object({
+            pieceName: z.string(),
+            projectId: z.string(),
+            displayName: z.string(),
+            externalId: z.string(),
+            code: z.string(),
+            codeVerifier: z.string().optional(),
+            clientId: z.string().optional(),
+            redirectUrl: z.string(),
+            scope: z.string().optional(),
+            props: z.record(z.string(), z.unknown()).optional(),
+        }),
+        response: {
+            [StatusCodes.CREATED]: AppConnectionWithoutSensitiveData,
         },
     },
 }
