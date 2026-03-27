@@ -22,7 +22,9 @@ import { z } from 'zod'
 import { ProjectResourceType } from '../core/security/authorization/common'
 import { securityAccess } from '../core/security/authorization/fastify-security'
 import { applicationEvents } from '../helper/application-events'
+import { apAxios } from '../helper/ap-axios'
 import { securityHelper } from '../helper/security-helper'
+import { system } from '../helper/system/system'
 import { appConnectionService } from './app-connection-service/app-connection-service'
 import { oauth2Util } from './app-connection-service/oauth2/oauth2-util'
 import { AppConnectionEntity } from './app-connection.entity'
@@ -148,24 +150,44 @@ export const appConnectionController: FastifyPluginCallbackZod = (app, _opts, do
     })
 
     app.post('/oauth2/external-authorize', ExternalAuthorizeRequest, async (request) => {
+        let clientId = request.body.clientId
+        // If no clientId provided, try to fetch from AP cloud secrets
+        if (!clientId) {
+            try {
+                const edition = system.getEdition()
+                const cloudApps = (await apAxios.get<Record<string, { clientId: string }>>(
+                    'https://secrets.activepieces.com/apps',
+                    { params: { edition } },
+                )).data
+                const cloudApp = cloudApps[request.body.pieceName]
+                if (cloudApp?.clientId) {
+                    clientId = cloudApp.clientId
+                }
+            }
+            catch (e) {
+                request.log.warn({ error: e }, 'Failed to fetch cloud OAuth client ID')
+            }
+        }
         return oauth2Util(request.log).buildAuthorizationUrl({
             platformId: request.principal.platform.id,
             pieceName: request.body.pieceName,
             redirectUrl: request.body.redirectUrl,
             props: request.body.props,
             projectId: request.projectId,
-            clientId: request.body.clientId,
+            clientId,
         })
     })
 
     app.post('/oauth2/external-claim', ExternalClaimRequest, async (request, reply) => {
+        // Use CLOUD_OAUTH2 to route token exchange through AP's cloud secrets service
+        const connectionType = AppConnectionType.CLOUD_OAUTH2
         const appConnection = await appConnectionService(request.log).upsert({
             platformId: request.principal.platform.id,
             projectIds: [request.projectId],
-            type: AppConnectionType.PLATFORM_OAUTH2,
+            type: connectionType,
             externalId: request.body.externalId,
             value: {
-                type: AppConnectionType.PLATFORM_OAUTH2,
+                type: connectionType,
                 code: request.body.code,
                 code_challenge: request.body.codeVerifier,
                 client_id: request.body.clientId ?? '',
