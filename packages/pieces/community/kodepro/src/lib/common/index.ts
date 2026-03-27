@@ -45,7 +45,10 @@ export const kodeProAuth = PieceAuth.CustomAuth({
           severity: "info",
         },
       });
-      return { valid: response.status === 200 };
+      if (response.status === 200) {
+        return { valid: true };
+      }
+      return { valid: false, error: `Unexpected status ${response.status}` };
     } catch {
       return { valid: false, error: "Unable to connect to Kode Pro dashboard" };
     }
