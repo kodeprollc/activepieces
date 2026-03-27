@@ -179,22 +179,38 @@ export const appConnectionController: FastifyPluginCallbackZod = (app, _opts, do
     })
 
     app.post('/oauth2/external-claim', ExternalClaimRequest, async (request, reply) => {
-        // Use CLOUD_OAUTH2 to route token exchange through AP's cloud secrets service
-        const connectionType = AppConnectionType.CLOUD_OAUTH2
-        const appConnection = await appConnectionService(request.log).upsert({
-            platformId: request.principal.platform.id,
-            projectIds: [request.projectId],
-            type: connectionType,
-            externalId: request.body.externalId,
-            value: {
-                type: connectionType,
+        // Use CLOUD_OAUTH2 when no custom clientId (AP cloud exchanges with its own secret)
+        // Use PLATFORM_OAUTH2 when custom clientId is provided (provider has its own app)
+        const hasCustomClientId = !!request.body.clientId
+        const connectionType = hasCustomClientId
+            ? AppConnectionType.PLATFORM_OAUTH2
+            : AppConnectionType.CLOUD_OAUTH2
+
+        const value = hasCustomClientId
+            ? {
+                type: AppConnectionType.PLATFORM_OAUTH2 as const,
                 code: request.body.code,
                 code_challenge: request.body.codeVerifier,
                 client_id: request.body.clientId ?? '',
                 redirect_url: request.body.redirectUrl,
                 scope: request.body.scope ?? '',
                 props: request.body.props,
-            },
+            }
+            : {
+                type: AppConnectionType.CLOUD_OAUTH2 as const,
+                code: request.body.code,
+                code_challenge: request.body.codeVerifier,
+                client_id: '',
+                scope: request.body.scope ?? '',
+                props: request.body.props,
+            }
+
+        const appConnection = await appConnectionService(request.log).upsert({
+            platformId: request.principal.platform.id,
+            projectIds: [request.projectId],
+            type: connectionType,
+            externalId: request.body.externalId,
+            value,
             displayName: request.body.displayName,
             pieceName: request.body.pieceName,
             ownerId: await securityHelper.getUserIdFromRequest(request),
