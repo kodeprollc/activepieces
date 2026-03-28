@@ -18,6 +18,11 @@ export const inboundMessage = createAction({
       description: "Communication channel (e.g. sms, email, chat)",
       required: true,
     }),
+    channel_id: Property.ShortText({
+      displayName: "Channel ID",
+      description: "Sender identifier within the channel (e.g. phone number, PSID)",
+      required: true,
+    }),
     content: Property.LongText({
       displayName: "Content",
       description: "The message content",
@@ -61,6 +66,7 @@ export const inboundMessage = createAction({
     const body: Record<string, unknown> = {
       contact_id: propsValue["contact_id"],
       channel: propsValue["channel"],
+      channel_id: propsValue["channel_id"],
       content: propsValue["content"],
     };
 

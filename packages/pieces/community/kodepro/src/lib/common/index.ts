@@ -61,18 +61,27 @@ export type KodeProAuth = {
   clientId: string;
 };
 
+function resolveAuthProps(auth: unknown): KodeProAuth {
+  const a = auth as Record<string, unknown>;
+  if (a["props"]) {
+    return a["props"] as KodeProAuth;
+  }
+  return a as KodeProAuth;
+}
+
 export async function makeKodeProRequest(
-  auth: KodeProAuth,
+  auth: unknown,
   endpoint: string,
   method: HttpMethod = HttpMethod.GET,
   body?: Record<string, unknown>,
   queryParams?: Record<string, string>
 ) {
+  const { apiUrl, apiKey } = resolveAuthProps(auth);
   return await httpClient.sendRequest({
-    url: `${auth.apiUrl}/api/v1${endpoint}`,
+    url: `${apiUrl}/api/v1${endpoint}`,
     method,
     headers: {
-      Authorization: `Bearer ${auth.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body,
