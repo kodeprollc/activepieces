@@ -62,15 +62,15 @@ WORKDIR /usr/src/app
 COPY .npmrc package.json bun.lock bunfig.toml ./
 COPY packages/ ./packages/
 
-# Install all dependencies with frozen lockfile
+# Install all dependencies
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile
+    bun install
 
 # Copy remaining source code (turbo config, etc.)
 COPY . .
 
 # Build frontend, engine, server API, and worker
-RUN npx turbo run build --filter=web --filter=@activepieces/engine --filter=api --filter=worker --filter=@activepieces/piece-kodepro
+RUN npx turbo run build --filter=web --filter=@activepieces/engine --filter=api --filter=worker --filter=@activepieces/piece-kodepro --filter=@activepieces/piece-housecall-pro --filter=@activepieces/piece-titan-email
 
 # Remove piece directories not needed at runtime (keeps only the 4 pieces api imports)
 # Then regenerate bun.lock so it matches the trimmed workspace
@@ -81,6 +81,8 @@ RUN rm -rf packages/pieces/core packages/pieces/custom && \
       ! -name facebook-leads \
       ! -name intercom \
       ! -name kodepro \
+      ! -name housecall-pro \
+      ! -name titan-email \
       -exec rm -rf {} + && \
     rm -f bun.lock && bun install
 
