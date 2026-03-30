@@ -163,7 +163,7 @@ export const getJobs = createAction({
   },
 
   async run({ auth, propsValue }) {
-    const queryParams: Record<string, string> = {};
+    const queryParams: Record<string, string | string[]> = {};
 
     if (propsValue.page) queryParams['page'] = String(propsValue.page);
     if (propsValue.page_size) queryParams['page_size'] = String(propsValue.page_size);
@@ -172,11 +172,11 @@ export const getJobs = createAction({
     if (propsValue.invoice_number) queryParams['invoice_number'] = propsValue.invoice_number;
     if (propsValue.lead_source) queryParams['lead_source'] = propsValue.lead_source;
 
-    if (propsValue.employee_ids?.length) queryParams['employee_ids'] = (propsValue.employee_ids as string[]).join(',');
-    if (propsValue.location_ids?.length) queryParams['location_ids'] = (propsValue.location_ids as string[]).join(',');
-    if (propsValue.tag_ids?.length) queryParams['tag_ids'] = (propsValue.tag_ids as string[]).join(',');
-    if (propsValue.work_status?.length) queryParams['work_status'] = propsValue.work_status.join(',');
-    if (propsValue.expand?.length) queryParams['expand'] = propsValue.expand.join(',');
+    if (propsValue.employee_ids?.length) queryParams['employee_ids'] = propsValue.employee_ids as string[];
+    if (propsValue.location_ids?.length) queryParams['location_ids'] = propsValue.location_ids as string[];
+    if (propsValue.tag_ids?.length) queryParams['tag_ids'] = propsValue.tag_ids as string[];
+    if (propsValue.work_status?.length) queryParams['work_status'] = propsValue.work_status;
+    if (propsValue.expand?.length) queryParams['expand'] = propsValue.expand;
 
     if (propsValue.scheduled_start_min) queryParams['scheduled_start_min'] = propsValue.scheduled_start_min;
     if (propsValue.scheduled_start_max) queryParams['scheduled_start_max'] = propsValue.scheduled_start_max;

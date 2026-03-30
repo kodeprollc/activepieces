@@ -100,10 +100,20 @@ export async function makeHousecallProRequest(
   auth: AppConnectionValueForAuthProperty<typeof housecallProAuth>,
   endpoint: string,
   method: HttpMethod = HttpMethod.GET,
-  body?: any,
-  queryParams?: Record<string, string>
+  body?: unknown,
+  queryParams?: Record<string, string | string[]>
 ) {
-  const fullUrl = `${baseUrl}${endpoint}`;
+  // Build URL with repeated params for array values (e.g. work_status[]=a&work_status[]=b)
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(queryParams ?? {})) {
+    if (Array.isArray(value)) {
+      for (const v of value) qs.append(key, v);
+    } else {
+      qs.append(key, value);
+    }
+  }
+  const queryString = qs.toString();
+  const fullUrl = `${baseUrl}${endpoint}${queryString ? `?${queryString}` : ''}`;
 
   return await httpClient.sendRequest({
     url: fullUrl,
@@ -113,7 +123,6 @@ export async function makeHousecallProRequest(
       "Content-Type": "application/json",
     },
     body,
-    queryParams,
   });
 }
 
