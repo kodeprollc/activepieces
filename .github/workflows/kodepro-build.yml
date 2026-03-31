@@ -37,6 +37,14 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
 
+      - name: Pre-pull image on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: kode
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: docker pull ghcr.io/kodeprollc/activepieces:${{ steps.sha.outputs.sha }}
+
       - name: Deploy to all workflow services
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
@@ -78,14 +86,14 @@ jobs:
               -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
               "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
 
-            # restart = stop + start; use || true so a transient Coolify error doesn't abort the deploy
+            # Image is already on disk — restart is instant
             curl -s -X POST \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "https://coolify.kodepro.com/api/v1/services/$UUID/restart" > /dev/null || true
-            echo "[$NAME] Restarting (30s gap)..."
-            sleep 30
+            echo "[$NAME] Restarting..."
+            sleep 15
 
-            # If the restart left the service down, bring it back up
+            # Ensure service is up
             curl -s -X POST \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null || true
