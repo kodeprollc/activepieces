@@ -80,10 +80,15 @@ jobs:
 
             curl -sf -X POST \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID/restart" > /dev/null
+              "https://coolify.kodepro.com/api/v1/services/$UUID/stop" > /dev/null
+            echo "[$NAME] Stopping..."
+            sleep 20
 
-            echo "[$NAME] Restarting..."
-            sleep 5
+            curl -sf -X POST \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null
+            echo "[$NAME] Starting..."
+            sleep 10
           done
 
           echo "All workflow services updated."
