@@ -43,21 +43,6 @@ export const getJobs = createAction({
       description: 'Filter jobs by location IDs',
       required: false,
     }),
-    tag_ids: Property.MultiSelectDropdown({
-      auth: housecallProAuth,
-      displayName: 'Tags',
-      description: 'Filter jobs by tag.',
-      required: false,
-      refreshers: [],
-      options: async ({ auth }) => {
-        if (!auth) return { disabled: true, options: [], placeholder: 'Connect your account first' };
-        const response = await makeHousecallProRequest(auth as Parameters<typeof makeHousecallProRequest>[0], '/tags', HttpMethod.GET);
-        const tags: { id: string; name: string }[] = (response.body as { tags?: { id: string; name: string }[] })?.tags ?? [];
-        return {
-          options: tags.map(t => ({ label: t.name, value: t.id })),
-        };
-      },
-    }),
     // Status filters
     work_status: Property.StaticMultiSelectDropdown({
       displayName: 'Work Status',
@@ -184,7 +169,6 @@ export const getJobs = createAction({
 
     if (propsValue.employee_ids?.length) queryParams['employee_ids'] = propsValue.employee_ids as string[];
     if (propsValue.location_ids?.length) queryParams['location_ids'] = propsValue.location_ids as string[];
-    if (propsValue.tag_ids?.length) queryParams['tag_ids'] = propsValue.tag_ids as string[];
     if (propsValue.work_status?.length) queryParams['work_status'] = propsValue.work_status;
     if (propsValue.expand?.length) queryParams['expand'] = propsValue.expand;
 
