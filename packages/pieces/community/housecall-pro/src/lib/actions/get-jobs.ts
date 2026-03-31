@@ -46,7 +46,7 @@ export const getJobs = createAction({
     tag_ids: Property.MultiSelectDropdown({
       auth: housecallProAuth,
       displayName: 'Tags',
-      description: 'Filter jobs by tag',
+      description: 'Filter jobs by tag. Applied client-side — use page_size 100 to maximise coverage.',
       required: false,
       refreshers: [],
       options: async ({ auth }) => {
@@ -184,7 +184,6 @@ export const getJobs = createAction({
 
     if (propsValue.employee_ids?.length) queryParams['employee_ids'] = propsValue.employee_ids as string[];
     if (propsValue.location_ids?.length) queryParams['location_ids'] = propsValue.location_ids as string[];
-    if (propsValue.tag_ids?.length) queryParams['tag_ids'] = propsValue.tag_ids as string[];
     if (propsValue.work_status?.length) queryParams['work_status'] = propsValue.work_status;
     if (propsValue.expand?.length) queryParams['expand'] = propsValue.expand;
 
@@ -208,6 +207,16 @@ export const getJobs = createAction({
       queryParams
     );
 
-    return response.body;
+    const body = response.body as { jobs?: { tags?: { id: string }[] }[] };
+
+    // HCP doesn't support tag filtering server-side — filter client-side
+    if (propsValue.tag_ids?.length && body.jobs) {
+      const selectedIds = new Set(propsValue.tag_ids as string[]);
+      body.jobs = body.jobs.filter(job =>
+        job.tags?.some(t => selectedIds.has(t.id))
+      );
+    }
+
+    return body;
   },
 });
