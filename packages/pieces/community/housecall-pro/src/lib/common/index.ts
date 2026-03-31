@@ -103,11 +103,11 @@ export async function makeHousecallProRequest(
   body?: unknown,
   queryParams?: Record<string, string | string[]>
 ) {
-  // Build URL with repeated params for array values (e.g. work_status[]=a&work_status[]=b)
+  // Build URL — arrays use bracket notation (work_status[]=a&work_status[]=b) as required by HCP API
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(queryParams ?? {})) {
     if (Array.isArray(value)) {
-      for (const v of value) qs.append(key, v);
+      for (const v of value) qs.append(`${key}[]`, v);
     } else {
       qs.append(key, value);
     }
