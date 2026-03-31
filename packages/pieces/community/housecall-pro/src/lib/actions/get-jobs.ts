@@ -43,10 +43,19 @@ export const getJobs = createAction({
       description: 'Filter jobs by location IDs',
       required: false,
     }),
-    tag_ids: Property.Array({
-      displayName: 'Tag IDs',
-      description: 'Filter jobs by tag IDs',
+    tag_ids: Property.MultiSelectDropdown({
+      displayName: 'Tags',
+      description: 'Filter jobs by tag',
       required: false,
+      refreshers: [],
+      options: async ({ auth }) => {
+        if (!auth) return { disabled: true, options: [], placeholder: 'Connect your account first' };
+        const response = await makeHousecallProRequest(auth as Parameters<typeof makeHousecallProRequest>[0], '/tags', HttpMethod.GET);
+        const tags: { id: string; name: string }[] = (response.body as { tags?: { id: string; name: string }[] })?.tags ?? [];
+        return {
+          options: tags.map(t => ({ label: t.name, value: t.id })),
+        };
+      },
     }),
     // Status filters
     work_status: Property.StaticMultiSelectDropdown({

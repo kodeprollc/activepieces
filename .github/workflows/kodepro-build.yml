@@ -1,0 +1,89 @@
+name: Build and deploy KodePro image
+
+on:
+  push:
+    branches:
+      - kodepro-patches
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: kodeprollc/activepieces
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get commit SHA
+        id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
+
+      - name: Deploy to all workflow services
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          NEW_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          SERVICES=$(curl -sf \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            https://coolify.kodepro.com/api/v1/services | \
+            python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          items = data if isinstance(data, list) else data.get('data', [])
+          for s in items:
+              if 'workflows' in s.get('name', '').lower():
+                  print(s['uuid'] + '|' + s['name'])
+          ")
+
+          for entry in $SERVICES; do
+            UUID="${entry%%|*}"
+            NAME="${entry##*|}"
+            echo "[$NAME] Updating to $NEW_IMAGE"
+
+            UPDATED=$(curl -sf \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "https://coolify.kodepro.com/api/v1/services/$UUID" | \
+              python3 -c "
+          import sys, json, base64, re
+          d = json.load(sys.stdin)
+          compose = d['docker_compose_raw']
+          updated = re.sub(r'ghcr\.io/kodeprollc/activepieces:[a-f0-9]+', '$NEW_IMAGE', compose)
+          print(base64.b64encode(updated.encode()).decode())
+          ")
+
+            curl -sf -X PATCH \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
+              "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
+
+            curl -sf -X POST \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "https://coolify.kodepro.com/api/v1/services/$UUID/restart" > /dev/null
+
+            echo "[$NAME] Restarting..."
+            sleep 5
+          done
+
+          echo "All workflow services updated."
