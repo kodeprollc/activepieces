@@ -44,6 +44,7 @@ export const getJobs = createAction({
       required: false,
     }),
     tag_ids: Property.MultiSelectDropdown({
+      auth: housecallProAuth,
       displayName: 'Tags',
       description: 'Filter jobs by tag',
       required: false,
