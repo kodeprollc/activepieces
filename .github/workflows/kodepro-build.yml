@@ -70,6 +70,8 @@ jobs:
             for entry in $SERVICES; do
               UUID="${entry%%|*}"
               NAME="${entry##*|}"
+              SLUG="${NAME%-workflows}"
+              CONTAINER="${SLUG}-activepieces-${UUID}"
               echo "[$NAME] Deploying $NEW_IMAGE"
 
               # Update compose SHA in Coolify (for dashboard consistency)
@@ -90,10 +92,9 @@ jobs:
                 -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
                 "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
 
-              # Find the activepieces container for this service and swap image directly
-              CONTAINER=$(docker ps --format "{{.Names}}" | grep "^${NAME%-workflows}-activepieces-" | head -1 || true)
-              if [ -n "$CONTAINER" ]; then
-                echo "  Updating container: $CONTAINER"
+              # Stop old container if running
+              if docker inspect "$CONTAINER" > /dev/null 2>&1; then
+                echo "  Stopping $CONTAINER"
                 docker stop "$CONTAINER"
                 docker rm "$CONTAINER"
               fi
@@ -102,8 +103,33 @@ jobs:
               curl -s -X POST \
                 -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
                 "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null
-              echo "  Started"
-              sleep 10
+
+              # Poll until healthy or timeout (120s)
+              echo -n "  Waiting for $CONTAINER to be healthy"
+              ELAPSED=0
+              HEALTHY=false
+              while [ $ELAPSED -lt 120 ]; do
+                STATUS=$(docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
+                if [ "$STATUS" = "healthy" ]; then
+                  HEALTHY=true
+                  break
+                fi
+                echo -n "."
+                sleep 5
+                ELAPSED=$((ELAPSED + 5))
+              done
+
+              if $HEALTHY; then
+                echo " ✓"
+              else
+                echo " TIMEOUT — attempting second start"
+                curl -s -X POST \
+                  -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                  "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null
+                sleep 30
+                STATUS=$(docker inspect "$CONTAINER" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")
+                echo "  Final status: $STATUS"
+              fi
             done
 
             echo "All workflow services updated."
