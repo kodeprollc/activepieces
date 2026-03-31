@@ -78,17 +78,18 @@ jobs:
               -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
               "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
 
-            curl -sf -X POST \
+            # restart = stop + start; use || true so a transient Coolify error doesn't abort the deploy
+            curl -s -X POST \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID/stop" > /dev/null
-            echo "[$NAME] Stopping..."
-            sleep 20
+              "https://coolify.kodepro.com/api/v1/services/$UUID/restart" > /dev/null || true
+            echo "[$NAME] Restarting (30s gap)..."
+            sleep 30
 
-            curl -sf -X POST \
+            # If the restart left the service down, bring it back up
+            curl -s -X POST \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null
-            echo "[$NAME] Starting..."
-            sleep 10
+              "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null || true
+            sleep 5
           done
 
           echo "All workflow services updated."
