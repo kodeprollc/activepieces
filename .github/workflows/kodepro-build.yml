@@ -37,67 +37,73 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
 
-      - name: Pre-pull image on VPS
+      - name: Deploy to all workflow services
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          NEW_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: kode
           key: ${{ secrets.VPS_SSH_KEY }}
-          script: docker pull ghcr.io/kodeprollc/activepieces:${{ steps.sha.outputs.sha }}
+          envs: COOLIFY_API_TOKEN,NEW_IMAGE
+          script: |
+            set -euo pipefail
 
-      - name: Deploy to all workflow services
-        env:
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          NEW_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.sha.outputs.sha }}
-        run: |
-          set -euo pipefail
+            # Pull new image while services are still running
+            docker pull "$NEW_IMAGE"
+            echo "Image pulled: $NEW_IMAGE"
 
-          SERVICES=$(curl -sf \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            https://coolify.kodepro.com/api/v1/services | \
-            python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          items = data if isinstance(data, list) else data.get('data', [])
-          for s in items:
-              if 'workflows' in s.get('name', '').lower():
-                  print(s['uuid'] + '|' + s['name'])
-          ")
-
-          for entry in $SERVICES; do
-            UUID="${entry%%|*}"
-            NAME="${entry##*|}"
-            echo "[$NAME] Updating to $NEW_IMAGE"
-
-            UPDATED=$(curl -sf \
+            # Get all workflow service UUIDs from Coolify
+            SERVICES=$(curl -sf \
               -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID" | \
+              https://coolify.kodepro.com/api/v1/services | \
               python3 -c "
-          import sys, json, base64, re
-          d = json.load(sys.stdin)
-          compose = d['docker_compose_raw']
-          updated = re.sub(r'ghcr\.io/kodeprollc/activepieces:[a-f0-9]+', '$NEW_IMAGE', compose)
-          print(base64.b64encode(updated.encode()).decode())
-          ")
+            import sys, json
+            data = json.load(sys.stdin)
+            items = data if isinstance(data, list) else data.get('data', [])
+            for s in items:
+                if 'workflows' in s.get('name', '').lower():
+                    print(s['uuid'] + '|' + s['name'])
+            ")
 
-            curl -sf -X PATCH \
-              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
+            for entry in $SERVICES; do
+              UUID="${entry%%|*}"
+              NAME="${entry##*|}"
+              echo "[$NAME] Deploying $NEW_IMAGE"
 
-            # Image is already on disk — restart is instant
-            curl -s -X POST \
-              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID/restart" > /dev/null || true
-            echo "[$NAME] Restarting..."
-            sleep 15
+              # Update compose SHA in Coolify (for dashboard consistency)
+              UPDATED=$(curl -sf \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "https://coolify.kodepro.com/api/v1/services/$UUID" | \
+                python3 -c "
+            import sys, json, base64, re
+            d = json.load(sys.stdin)
+            compose = d['docker_compose_raw']
+            updated = re.sub(r'ghcr\.io/kodeprollc/activepieces:[a-f0-9]+', '$NEW_IMAGE', compose)
+            print(base64.b64encode(updated.encode()).decode())
+            ")
 
-            # Ensure service is up
-            curl -s -X POST \
-              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null || true
-            sleep 5
-          done
+              curl -sf -X PATCH \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"docker_compose_raw\": \"$UPDATED\"}" \
+                "https://coolify.kodepro.com/api/v1/services/$UUID" > /dev/null
 
-          echo "All workflow services updated."
+              # Find the activepieces container for this service and swap image directly
+              CONTAINER=$(docker ps --format "{{.Names}}" | grep "^${NAME%-workflows}-activepieces-" | head -1 || true)
+              if [ -n "$CONTAINER" ]; then
+                echo "  Updating container: $CONTAINER"
+                docker stop "$CONTAINER"
+                docker rm "$CONTAINER"
+              fi
+
+              # Bring service back up via Coolify start (image already on disk, instant)
+              curl -s -X POST \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "https://coolify.kodepro.com/api/v1/services/$UUID/start" > /dev/null
+              echo "  Started"
+              sleep 10
+            done
+
+            echo "All workflow services updated."
